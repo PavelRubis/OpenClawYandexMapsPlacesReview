@@ -1,0 +1,44 @@
+{
+  "id": "yandex-maps-places-review",
+  "name": "Yandex Maps Places Review",
+  "description": "Collect recent public Yandex Maps place reviews with browser automation.",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "logLevel": {
+        "anyOf": [
+          {
+            "type": "string",
+            "const": "silent"
+          },
+          {
+            "type": "string",
+            "const": "error"
+          },
+          {
+            "type": "string",
+            "const": "warn"
+          },
+          {
+            "type": "string",
+            "const": "info"
+          },
+          {
+            "type": "string",
+            "const": "debug"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false
+  },
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": [
+      "yandex_maps_place_reviews"
+    ]
+  }
+}

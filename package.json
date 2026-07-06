@@ -1,0 +1,61 @@
+{
+  "name": "openclaw-yandex-maps-places-review",
+  "version": "0.1.0",
+  "description": "OpenClaw tool plugin that collects recent Yandex Maps place reviews with Playwright.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "openclaw.plugin.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "plugin:build": "npm run build && node ./node_modules/openclaw/openclaw.mjs plugins build --entry ./dist/index.js",
+    "plugin:validate": "npm run build && node ./node_modules/openclaw/openclaw.mjs plugins validate --entry ./dist/index.js",
+    "test": "cross-env PLAYWRIGHT_BROWSERS_PATH=0 vitest run",
+    "verify": "npm run build && npm test && npm run plugin:build && npm run plugin:validate",
+    "test:live": "cross-env PLAYWRIGHT_BROWSERS_PATH=0 vitest run src/Tests/Infrastructure/scraper.live.test.ts",
+    "test:headed": "cross-env PLAYWRIGHT_BROWSERS_PATH=0 HEADED=1 vitest run src/Tests/Infrastructure/scraper.live.test.ts",
+    "run:tool": "cross-env PLAYWRIGHT_BROWSERS_PATH=0 tsx scripts/run-tool.ts"
+  },
+  "keywords": [
+    "openclaw",
+    "plugin",
+    "tool",
+    "yandex-maps",
+    "reviews"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "packageManager": "npm@11.16.0",
+  "dependencies": {
+    "pino": "^10.3.1",
+    "playwright": "^1.55.0",
+    "typebox": "^1.1.38"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.5.17"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "cross-env": "^10.0.0",
+    "openclaw": "latest",
+    "tsx": "^4.20.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  },
+  "openclaw": {
+    "extensions": [
+      "./src/index.ts",
+      "./dist/index.js"
+    ],
+    "runtimeExtensions": [
+      "./dist/index.js"
+    ]
+  }
+}
