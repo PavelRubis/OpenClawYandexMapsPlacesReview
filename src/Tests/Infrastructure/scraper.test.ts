@@ -5,11 +5,11 @@ import {
   clickIfVisible,
   extractReviewsWithDiagnostics,
   extractReviewsFromPage,
-  isCaptchaOrChallenge,
   scrollReviews,
-  selectNewestSort,
   waitForReviewsPageReady,
 } from "../../Infrastructure/YandexMaps/playwright-yandex-maps-review-collector.js";
+import { PlaywrightYandexMapsReviewNavigator } from "../../Infrastructure/YandexMaps/playwright-yandex-maps-review-navigator.js";
+import { PlaywrightYandexMapsReviewParser } from "../../Infrastructure/YandexMaps/playwright-yandex-maps-review-parser.js";
 
 let browser: Browser | undefined;
 
@@ -36,7 +36,7 @@ describe("scraper browser helpers", () => {
       </article>
     `);
 
-    await expect(extractReviewsFromPage(page)).resolves.toEqual([
+    await expect(new PlaywrightYandexMapsReviewParser().extractReviews(page)).resolves.toEqual([
       {
         url: "https://yandex.ru/maps/org/test/1/reviews/abc",
         date: "2026-07-05",
@@ -54,7 +54,7 @@ describe("scraper browser helpers", () => {
     const page = await browser!.newPage();
     await page.setContent("<main>Подтвердите, что вы не робот</main>");
 
-    await expect(isCaptchaOrChallenge(page)).resolves.toBe(true);
+    await expect(new PlaywrightYandexMapsReviewParser().isCaptchaOrChallenge(page)).resolves.toBe(true);
     await page.close();
   });
 
@@ -62,7 +62,7 @@ describe("scraper browser helpers", () => {
     const page = await browser!.newPage();
     await page.setContent(sortFixtureHtml());
 
-    await selectNewestSort(page, silentLogger);
+    await new PlaywrightYandexMapsReviewNavigator(silentLogger).selectNewestSort(page);
 
     expect(await page.locator(".rating-ranking-view").innerText()).toBe("По новизне");
     expect(await page.locator(".business-review-view__date").allInnerTexts()).toEqual(["11 июля", "8 июля"]);
@@ -81,7 +81,7 @@ describe("scraper browser helpers", () => {
         </div>
       `);
 
-      await expect(selectNewestSort(page, silentLogger)).rejects.toThrow(
+      await expect(new PlaywrightYandexMapsReviewNavigator(silentLogger).selectNewestSort(page)).rejects.toThrow(
         "Could not confirm newest-first review sorting after 3 attempts.",
       );
       await page.close();
@@ -147,7 +147,7 @@ describe("scraper browser helpers", () => {
     const page = await browser!.newPage();
     await page.setContent(scrollFixtureHtml(true));
 
-    await expect(scrollReviews(page, 0)).resolves.toBe(true);
+    await expect(new PlaywrightYandexMapsReviewNavigator(silentLogger).scroll(page, 0)).resolves.toBe(true);
     expect(await page.locator(".business-review-view").count()).toBe(100);
     await page.close();
   });
