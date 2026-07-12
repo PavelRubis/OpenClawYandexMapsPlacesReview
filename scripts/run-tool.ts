@@ -1,5 +1,5 @@
-import { fetchYandexMapsPlaceReviews } from "../src/scraper.js";
-import type { LogLevel } from "../src/types.js";
+import type { LogLevel } from "../src/Application/Dtos/yandex-maps-place-reviews.dto.js";
+import { createToolCallHandlers } from "../src/Composition/create-tool-call-handlers.js";
 
 const url = process.argv[2] ?? process.env.YANDEX_MAPS_PLACE_URL;
 const count = normalizeCount(process.argv[3] ?? process.env.YANDEX_MAPS_REVIEW_COUNT);
@@ -11,12 +11,8 @@ if (!url) {
   process.exit(1);
 }
 
-const result = await fetchYandexMapsPlaceReviews({
-  url,
-  count,
-  headed,
-  logLevel,
-});
+const handlers = createToolCallHandlers({ logLevel });
+const result = await handlers.getYandexMapsPlaceReviews.handle({ url, count, headed });
 
 console.log(JSON.stringify(result, null, 2));
 

@@ -3,22 +3,16 @@ import type { Clock } from "../../Application/Dependencies/clock.js";
 import type { AppLogger } from "../../Application/Dependencies/logger.js";
 import type { YandexMapsReviewCollector } from "../../Application/Dependencies/yandex-maps-review-collector.js";
 import type {
-  GetYandexMapsPlaceReviewsInputDto,
+  CollectYandexMapsPlaceReviewsInputDto,
   GetYandexMapsPlaceReviewsOutputDto,
   LogLevel,
   YandexMapsReviewDto,
 } from "../../Application/Dtos/yandex-maps-place-reviews.dto.js";
-import { normalizeReviewCount } from "../../count.js";
-import { findResumeIndex, mergeUniqueReviews } from "../../dedupe.js";
-import { normalizeYandexMapsReviewsUrl } from "../../yandex-url.js";
 import type {
-  ExtractedReviews,
   PlaywrightYandexMapsReviewSession,
   YandexMapsReviewNavigator,
   YandexMapsReviewParser,
 } from "./playwright-yandex-maps-review-contracts.js";
-import { PlaywrightYandexMapsReviewNavigator } from "./playwright-yandex-maps-review-navigator.js";
-import { PlaywrightYandexMapsReviewParser } from "./playwright-yandex-maps-review-parser.js";
 
 const MAX_SCROLLS = 140;
 const MAX_CAPTCHA_RELOADS = 4;
@@ -44,13 +38,13 @@ export class PlaywrightYandexMapsReviewCollector implements YandexMapsReviewColl
   constructor(private readonly options: PlaywrightYandexMapsReviewCollectorOptions) {}
 
   async collect(
-    input: GetYandexMapsPlaceReviewsInputDto,
+    input: CollectYandexMapsPlaceReviewsInputDto,
     options?: {
       signal?: AbortSignal;
     },
   ): Promise<GetYandexMapsPlaceReviewsOutputDto> {
-    const requestedCount = normalizeReviewCount(input.count);
-    const sourceUrl = normalizeYandexMapsReviewsUrl(input.url);
+    const requestedCount = input.count;
+    const sourceUrl = input.url;
     const warnings: string[] = [];
     const stats: CollectionStats = {
       attempts: 1,
@@ -104,10 +98,10 @@ export class PlaywrightYandexMapsReviewCollector implements YandexMapsReviewColl
 
         const pageReviews = extracted.reviews;
         const resumeIndex =
-          reviews.length > 0 ? findResumeIndex(pageReviews, reviews[reviews.length - 1]?.text ?? "") : -1;
+          reviews.length > 0 ? this.findResumeIndex(pageReviews, reviews[reviews.length - 1]?.text ?? "") : -1;
         const newPageReviews = resumeIndex === -1 ? pageReviews : pageReviews.slice(resumeIndex + 1);
         const previousReviewCount = reviews.length;
-        const merged = mergeUniqueReviews(reviews, newPageReviews);
+        const merged = this.mergeUniqueReviews(reviews, newPageReviews);
         reviews = merged.reviews.slice(0, requestedCount);
         stats.duplicatesSkipped += merged.duplicates;
         scansWithoutNewReviews = reviews.length > previousReviewCount ? 0 : scansWithoutNewReviews + 1;
@@ -209,7 +203,7 @@ export class PlaywrightYandexMapsReviewCollector implements YandexMapsReviewColl
       signal?.throwIfAborted();
       await this.options.navigator.expandReviewTexts(page, signal);
       const reviews = await this.options.parser.extractReviews(page, signal);
-      if (findResumeIndex(reviews, text) !== -1) {
+      if (this.findResumeIndex(reviews, text) !== -1) {
         this.options.logger.debug("Resume review found after reload.", { scrolls: index });
         return;
       }
@@ -219,44 +213,39 @@ export class PlaywrightYandexMapsReviewCollector implements YandexMapsReviewColl
       }
     }
   }
-}
 
-const silentLogger: AppLogger = {
-  level: "silent",
-  error: () => undefined,
-  warn: () => undefined,
-  info: () => undefined,
-  debug: () => undefined,
-};
+  private mergeUniqueReviews(
+    existing: YandexMapsReviewDto[],
+    incoming: YandexMapsReviewDto[],
+  ): { reviews: YandexMapsReviewDto[]; duplicates: number } {
+    const seen = new Set(existing.map((review) => this.reviewKey(review)));
+    const reviews = [...existing];
+    let duplicates = 0;
 
-export async function waitForReviewsPageReady(page: Page, signal?: AbortSignal): Promise<void> {
-  return new PlaywrightYandexMapsReviewNavigator(silentLogger).waitForReviewsPageReady(page, signal);
-}
+    for (const review of incoming) {
+      const key = this.reviewKey(review);
+      if (seen.has(key)) {
+        duplicates += 1;
+        continue;
+      }
 
-export async function selectNewestSort(page: Page, logger: AppLogger, signal?: AbortSignal): Promise<void> {
-  return new PlaywrightYandexMapsReviewNavigator(logger).selectNewestSort(page, signal);
-}
+      seen.add(key);
+      reviews.push(review);
+    }
 
-export async function extractReviewsFromPage(page: Page, signal?: AbortSignal): Promise<YandexMapsReviewDto[]> {
-  const navigator = new PlaywrightYandexMapsReviewNavigator(silentLogger);
-  await navigator.expandReviewTexts(page, signal);
-  return new PlaywrightYandexMapsReviewParser().extractReviews(page, signal);
-}
+    return { reviews, duplicates };
+  }
 
-export async function extractReviewsWithDiagnostics(page: Page, signal?: AbortSignal): Promise<ExtractedReviews> {
-  const navigator = new PlaywrightYandexMapsReviewNavigator(silentLogger);
-  await navigator.expandReviewTexts(page, signal);
-  return new PlaywrightYandexMapsReviewParser().extractReviewsWithDiagnostics(page, signal);
-}
+  private reviewKey(review: YandexMapsReviewDto): string {
+    return `text:${review.date.trim()}|${this.normalizeText(review.text)}`;
+  }
 
-export async function scrollReviews(page: Page, delayMs: number, signal?: AbortSignal): Promise<boolean> {
-  return new PlaywrightYandexMapsReviewNavigator(silentLogger).scroll(page, delayMs, signal);
-}
+  private normalizeText(text: string): string {
+    return text.replace(/\s+/g, " ").trim();
+  }
 
-export async function clickIfVisible(page: Page, label: RegExp, signal?: AbortSignal): Promise<boolean> {
-  return new PlaywrightYandexMapsReviewNavigator(silentLogger).clickIfVisible(page, label, signal);
-}
-
-export async function isCaptchaOrChallenge(page: Page): Promise<boolean> {
-  return new PlaywrightYandexMapsReviewParser().isCaptchaOrChallenge(page);
+  private findResumeIndex(reviews: YandexMapsReviewDto[], lastText: string): number {
+    const normalizedLastText = this.normalizeText(lastText);
+    return reviews.findIndex((review) => this.normalizeText(review.text) === normalizedLastText);
+  }
 }

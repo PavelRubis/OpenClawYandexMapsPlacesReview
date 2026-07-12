@@ -1,6 +1,5 @@
 import { chromium, type ElementHandle, type Locator, type Page } from "playwright";
 import type { AppLogger } from "../../Application/Dependencies/logger.js";
-import { normalizeText } from "../../dedupe.js";
 import type {
   PlaywrightYandexMapsReviewSession,
   YandexMapsReviewNavigator,
@@ -386,4 +385,8 @@ async function firstText(root: Locator, selectors: readonly string[]): Promise<s
     }
   }
   return "";
+}
+
+function normalizeText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
 }

@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { fetchYandexMapsPlaceReviews } from "../../scraper.js";
+import { createToolCallHandlers } from "../../Composition/create-tool-call-handlers.js";
 
 const liveUrl =
   process.env.YANDEX_MAPS_PLACE_URL ??
@@ -9,15 +9,15 @@ const liveUrl =
 const liveCount = normalizeLiveCount(process.env.YANDEX_MAPS_REVIEW_COUNT);
 const headed = process.env.HEADED === "1";
 
-describe("live Yandex Maps scraper", () => {
+describe("live Yandex Maps review collector", () => {
   it(
     "collects recent reviews from a real Yandex Maps place page",
     async () => {
-      const result = await fetchYandexMapsPlaceReviews({
+      const handlers = createToolCallHandlers({ logLevel: "info" });
+      const result = await handlers.getYandexMapsPlaceReviews.handle({
         url: liveUrl,
         count: liveCount,
         headed,
-        logLevel: "info",
       });
 
       const resultUrl = new URL(result.sourceUrl);

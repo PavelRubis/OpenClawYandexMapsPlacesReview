@@ -17,11 +17,12 @@ const logger: AppLogger = {
 };
 
 describe("GetYandexMapsPlaceReviewsToolCallHandler", () => {
-  it("normalizes default count before calling the collector", async () => {
+  it("normalizes input before calling the collector and preserves execution options", async () => {
+    const controller = new AbortController();
     const collector: YandexMapsReviewCollector = {
       collect: vi.fn(async (input) => ({
-        sourceUrl: "https://yandex.ru/maps/org/test/1/reviews/",
-        requestedCount: input.count ?? -1,
+        sourceUrl: input.url,
+        requestedCount: input.count,
         fetchedAt: clock.now().toISOString(),
         reviews: [],
         stats: {
@@ -35,27 +36,32 @@ describe("GetYandexMapsPlaceReviewsToolCallHandler", () => {
     };
     const handler = new GetYandexMapsPlaceReviewsToolCallHandler(collector, clock, logger);
 
-    await expect(handler.handle({ url: "https://yandex.ru/maps/org/test/1/" })).resolves.toMatchObject({
-      requestedCount: 100,
-    });
+    await expect(
+      handler.handle(
+        { url: "https://yandex.ru/maps/org/test/1/?source=share", headed: true },
+        { signal: controller.signal },
+      ),
+    ).resolves.toMatchObject({ requestedCount: 100 });
     expect(collector.collect).toHaveBeenCalledWith(
       {
-        url: "https://yandex.ru/maps/org/test/1/",
+        url: "https://yandex.ru/maps/org/test/1/reviews/",
         count: 100,
+        headed: true,
       },
       {
-        signal: undefined,
+        signal: controller.signal,
       },
     );
   });
 
-  it("rejects an empty URL before calling infrastructure", async () => {
+  it("rejects invalid input before calling infrastructure", async () => {
     const collector: YandexMapsReviewCollector = {
       collect: vi.fn(),
     };
     const handler = new GetYandexMapsPlaceReviewsToolCallHandler(collector, clock, logger);
 
     await expect(handler.handle({ url: " " })).rejects.toThrow(/url must not be empty/);
+    await expect(handler.handle({ url: "https://example.com/maps/org/test/1" })).rejects.toThrow(/Yandex Maps/);
     expect(collector.collect).not.toHaveBeenCalled();
   });
 });

@@ -24,17 +24,29 @@ const logger: AppLogger = {
 };
 
 describe("PlaywrightYandexMapsReviewCollector orchestration", () => {
-  it("stops at the requested count and reports duplicate reviews", async () => {
+  it("normalizes resume text, deduplicates by date and text, and ignores the URL", async () => {
     const navigator = new FakeNavigator();
     const parser = new FakeParser([
-      extracted([review("1"), review("2")]),
-      extracted([review("1"), review("2"), review("3"), review("1")]),
+      extracted([
+        { url: "https://example.test/one", date: "2026-07-01", text: "First review" },
+        { date: "2026-07-02", text: "Resume Point" },
+      ]),
+      extracted([
+        { url: "https://example.test/one", date: "2026-07-01", text: "First review" },
+        { date: "2026-07-02", text: "Resume   Point" },
+        { url: "https://example.test/two", date: "2026-07-01", text: " First   review " },
+        { url: "https://example.test/three", date: "2026-07-03", text: "First review" },
+      ]),
     ]);
     const collector = createCollector(navigator, parser);
 
     const result = await collector.collect({ url: placeUrl, count: 3 });
 
-    expect(result.reviews.map((item) => item.text)).toEqual(["Review 1", "Review 2", "Review 3"]);
+    expect(result.reviews).toEqual([
+      { url: "https://example.test/one", date: "2026-07-01", text: "First review" },
+      { date: "2026-07-02", text: "Resume Point" },
+      { url: "https://example.test/three", date: "2026-07-03", text: "First review" },
+    ]);
     expect(result.stats.duplicatesSkipped).toBe(1);
     expect(result.stats.scrolls).toBe(1);
     expect(navigator.closedSessions).toEqual([navigator.session]);
@@ -214,4 +226,4 @@ function review(id: string): YandexMapsReviewDto {
   };
 }
 
-const placeUrl = "https://yandex.ru/maps/org/test/1/";
+const placeUrl = "https://yandex.ru/maps/org/test/1/reviews/";

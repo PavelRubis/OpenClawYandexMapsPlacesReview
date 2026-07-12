@@ -1,6 +1,44 @@
+import {
+  DEFAULT_REVIEW_COUNT,
+  MAX_REVIEW_COUNT,
+  MIN_REVIEW_COUNT,
+  type CollectYandexMapsPlaceReviewsInputDto,
+  type GetYandexMapsPlaceReviewsInputDto,
+} from "../Dtos/yandex-maps-place-reviews.dto.js";
+
 const ALLOWED_HOSTS = new Set(["yandex.ru", "yandex.com", "yandex.by", "yandex.kz", "yandex.uz"]);
 
-export function normalizeYandexMapsReviewsUrl(input: string): string {
+export function normalizeYandexMapsPlaceReviewsInput(
+  input: GetYandexMapsPlaceReviewsInputDto,
+): CollectYandexMapsPlaceReviewsInputDto {
+  return {
+    url: normalizeYandexMapsReviewsUrl(input.url),
+    count: normalizeReviewCount(input.count),
+    ...(input.headed === undefined ? {} : { headed: input.headed }),
+  };
+}
+
+function normalizeReviewCount(count: number | undefined): number {
+  if (count === undefined) {
+    return DEFAULT_REVIEW_COUNT;
+  }
+
+  if (!Number.isInteger(count)) {
+    throw new Error("count must be an integer.");
+  }
+
+  if (count < MIN_REVIEW_COUNT || count > MAX_REVIEW_COUNT) {
+    throw new Error(`count must be between ${MIN_REVIEW_COUNT} and ${MAX_REVIEW_COUNT}.`);
+  }
+
+  return count;
+}
+
+function normalizeYandexMapsReviewsUrl(input: string): string {
+  if (!input.trim()) {
+    throw new Error("url must not be empty.");
+  }
+
   let parsed: URL;
 
   try {

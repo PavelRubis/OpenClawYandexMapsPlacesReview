@@ -149,12 +149,12 @@ npm run test:headed
 ## Структура проекта
 
 - `src/Tools` - тонкие OpenClaw tool adapters.
-- `src/Application` - DTO, dependency interfaces и tool call handlers.
+- `src/Application` - DTO, нормализация входа, dependency interfaces и tool call handlers.
 - `src/Infrastructure` - Playwright collector, logging и clock implementations.
 - `src/Composition` - сборка handlers и infrastructure.
 - `src/Schemas` - TypeBox-схемы config и parameters.
-- `src/Tests` - application, infrastructure, plugin и live scraper tests.
-- `scripts/run-tool.ts` - ручной запуск collector-а и печать JSON output.
+- `src/Tests` - application, infrastructure, plugin и live collector tests.
+- `scripts/run-tool.ts` - ручной запуск handler-а через composition root и печать JSON output.
 
 ## Ограничения
 

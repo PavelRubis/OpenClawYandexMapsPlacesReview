@@ -16,6 +16,12 @@ export type GetYandexMapsPlaceReviewsInputDto = {
   headed?: boolean;
 };
 
+export type CollectYandexMapsPlaceReviewsInputDto = {
+  url: string;
+  count: number;
+  headed?: boolean;
+};
+
 export type GetYandexMapsPlaceReviewsOutputDto = {
   sourceUrl: string;
   requestedCount: number;

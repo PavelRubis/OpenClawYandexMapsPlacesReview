@@ -1,6 +1,5 @@
 import type { Locator, Page } from "playwright";
 import type { YandexMapsReviewDto } from "../../Application/Dtos/yandex-maps-place-reviews.dto.js";
-import { normalizeText } from "../../dedupe.js";
 import type {
   ExtractedReviews,
   YandexMapsReviewParser,
@@ -120,4 +119,8 @@ function absoluteYandexUrl(href: string): string {
   } catch {
     return href;
   }
+}
+
+function normalizeText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
 }

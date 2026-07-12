@@ -17,8 +17,8 @@
     "plugin:validate": "npm run build && node ./node_modules/openclaw/openclaw.mjs plugins validate --entry ./src/index.ts",
     "test": "cross-env PLAYWRIGHT_BROWSERS_PATH=0 vitest run",
     "verify": "npm run build && npm test && npm run plugin:build && npm run plugin:validate",
-    "test:live": "cross-env PLAYWRIGHT_BROWSERS_PATH=0 vitest run src/Tests/Infrastructure/scraper.live.test.ts",
-    "test:headed": "cross-env PLAYWRIGHT_BROWSERS_PATH=0 HEADED=1 vitest run src/Tests/Infrastructure/scraper.live.test.ts",
+    "test:live": "cross-env PLAYWRIGHT_BROWSERS_PATH=0 vitest run src/Tests/Infrastructure/playwright-yandex-maps-review-collector.live.test.ts",
+    "test:headed": "cross-env PLAYWRIGHT_BROWSERS_PATH=0 HEADED=1 vitest run src/Tests/Infrastructure/playwright-yandex-maps-review-collector.live.test.ts",
     "run:tool": "cross-env PLAYWRIGHT_BROWSERS_PATH=0 tsx scripts/run-tool.ts"
   },
   "keywords": [

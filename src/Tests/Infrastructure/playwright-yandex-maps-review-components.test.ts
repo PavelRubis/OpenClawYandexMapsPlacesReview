@@ -1,13 +1,6 @@
 import { chromium, type Browser } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AppLogger } from "../../Application/Dependencies/logger.js";
-import {
-  clickIfVisible,
-  extractReviewsWithDiagnostics,
-  extractReviewsFromPage,
-  scrollReviews,
-  waitForReviewsPageReady,
-} from "../../Infrastructure/YandexMaps/playwright-yandex-maps-review-collector.js";
 import { PlaywrightYandexMapsReviewNavigator } from "../../Infrastructure/YandexMaps/playwright-yandex-maps-review-navigator.js";
 import { PlaywrightYandexMapsReviewParser } from "../../Infrastructure/YandexMaps/playwright-yandex-maps-review-parser.js";
 
@@ -21,7 +14,7 @@ afterAll(async () => {
   await browser?.close();
 });
 
-describe("scraper browser helpers", () => {
+describe("Playwright Yandex Maps review components", () => {
   it("extracts date, text, and link from local fixture HTML", async () => {
     const page = await browser!.newPage();
     await page.setContent(`
@@ -111,7 +104,9 @@ describe("scraper browser helpers", () => {
       </script>
     `);
 
-    const reviews = await extractReviewsFromPage(page);
+    const navigator = new PlaywrightYandexMapsReviewNavigator(silentLogger);
+    await navigator.expandReviewTexts(page);
+    const reviews = await new PlaywrightYandexMapsReviewParser().extractReviews(page);
 
     expect(reviews.map((review) => review.text)).toEqual(["Помещение уютное", "Полный текст отзыва"]);
     expect(await page.evaluate(() => (window as unknown as { unrelatedClicks: number }).unrelatedClicks)).toBe(0);
@@ -122,7 +117,9 @@ describe("scraper browser helpers", () => {
     const page = await browser!.newPage();
     await page.setContent("<button disabled>Принять</button>");
 
-    await expect(clickIfVisible(page, /^Принять$/i)).resolves.toBe(false);
+    await expect(
+      new PlaywrightYandexMapsReviewNavigator(silentLogger).clickIfVisible(page, /^Принять$/i),
+    ).resolves.toBe(false);
     await page.close();
   });
 
@@ -136,7 +133,9 @@ describe("scraper browser helpers", () => {
       </article>
     `);
 
-    const result = await extractReviewsWithDiagnostics(page);
+    const navigator = new PlaywrightYandexMapsReviewNavigator(silentLogger);
+    await navigator.expandReviewTexts(page);
+    const result = await new PlaywrightYandexMapsReviewParser().extractReviewsWithDiagnostics(page);
 
     expect(result.reviews[0]?.text).toBe("Короткий текст… ещё");
     expect(result.failedExpansionKeys).toHaveLength(1);
@@ -158,7 +157,7 @@ describe("scraper browser helpers", () => {
       const page = await browser!.newPage();
       await page.setContent(scrollFixtureHtml(false));
 
-      await expect(scrollReviews(page, 0)).resolves.toBe(false);
+      await expect(new PlaywrightYandexMapsReviewNavigator(silentLogger).scroll(page, 0)).resolves.toBe(false);
       expect(await page.locator(".unrelated-scroll").evaluate((element) => element.scrollTop)).toBe(0);
       await page.close();
     },
@@ -171,7 +170,9 @@ describe("scraper browser helpers", () => {
     const controller = new AbortController();
     setTimeout(() => controller.abort(), 100);
 
-    await expect(waitForReviewsPageReady(page, controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+    await expect(
+      new PlaywrightYandexMapsReviewNavigator(silentLogger).waitForReviewsPageReady(page, controller.signal),
+    ).rejects.toMatchObject({ name: "AbortError" });
     await page.close();
   });
 
@@ -187,7 +188,9 @@ describe("scraper browser helpers", () => {
     const controller = new AbortController();
     setTimeout(() => controller.abort(), 100);
 
-    await expect(extractReviewsFromPage(page, controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+    await expect(
+      new PlaywrightYandexMapsReviewNavigator(silentLogger).expandReviewTexts(page, controller.signal),
+    ).rejects.toMatchObject({ name: "AbortError" });
     await page.close();
   });
 
@@ -197,7 +200,9 @@ describe("scraper browser helpers", () => {
     const controller = new AbortController();
     setTimeout(() => controller.abort(), 100);
 
-    await expect(scrollReviews(page, 0, controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+    await expect(
+      new PlaywrightYandexMapsReviewNavigator(silentLogger).scroll(page, 0, controller.signal),
+    ).rejects.toMatchObject({ name: "AbortError" });
     await page.close();
   });
 });

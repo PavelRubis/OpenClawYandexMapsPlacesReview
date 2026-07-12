@@ -1,4 +1,3 @@
-import { normalizeReviewCount } from "../../count.js";
 import type { Clock } from "../Dependencies/clock.js";
 import type { AppLogger } from "../Dependencies/logger.js";
 import type { YandexMapsReviewCollector } from "../Dependencies/yandex-maps-review-collector.js";
@@ -6,6 +5,7 @@ import type {
   GetYandexMapsPlaceReviewsInputDto,
   GetYandexMapsPlaceReviewsOutputDto,
 } from "../Dtos/yandex-maps-place-reviews.dto.js";
+import { normalizeYandexMapsPlaceReviewsInput } from "../Normalization/normalize-yandex-maps-place-reviews-input.js";
 
 export class GetYandexMapsPlaceReviewsToolCallHandler {
   constructor(
@@ -22,22 +22,15 @@ export class GetYandexMapsPlaceReviewsToolCallHandler {
   ): Promise<GetYandexMapsPlaceReviewsOutputDto> {
     options?.signal?.throwIfAborted();
 
-    if (!input.url.trim()) {
-      throw new Error("url must not be empty.");
-    }
-
-    const count = normalizeReviewCount(input.count);
+    const normalizedInput = normalizeYandexMapsPlaceReviewsInput(input);
     this.logger.info("Handling Yandex Maps reviews tool call.", {
-      count,
-      headed: Boolean(input.headed),
+      count: normalizedInput.count,
+      headed: Boolean(normalizedInput.headed),
       requestedAt: this.clock.now().toISOString(),
     });
 
     return this.collector.collect(
-      {
-        ...input,
-        count,
-      },
+      normalizedInput,
       {
         signal: options?.signal,
       },

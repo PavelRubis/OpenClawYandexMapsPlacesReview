@@ -1,11 +1,11 @@
 import type {
-  GetYandexMapsPlaceReviewsInputDto,
+  CollectYandexMapsPlaceReviewsInputDto,
   GetYandexMapsPlaceReviewsOutputDto,
 } from "../Dtos/yandex-maps-place-reviews.dto.js";
 
 export interface YandexMapsReviewCollector {
   collect(
-    input: GetYandexMapsPlaceReviewsInputDto,
+    input: CollectYandexMapsPlaceReviewsInputDto,
     options?: {
       signal?: AbortSignal;
     },
