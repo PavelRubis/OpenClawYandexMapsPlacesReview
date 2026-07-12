@@ -71,6 +71,8 @@ yandex_maps_place_reviews
 - `url` - ссылка на заведение в Яндекс Картах.
 - `count` - необязательное количество последних отзывов, по умолчанию `100`, минимум `1`, максимум `500`.
 
+Поддерживаются как канонические ссылки вида `https://yandex.ru/maps/org/...`, так и share/POI-ссылки вида `https://yandex.com/maps/213/moscow/?mode=poi&poi%5Buri%5D=ymapsbm1%3A%2F%2Forg%3Foid%3D...&tab=reviews`.
+
 Config плагина:
 
 - `logLevel` - необязательный уровень логирования: `silent`, `error`, `warn`, `info`, `debug`.
@@ -135,7 +137,14 @@ $env:YANDEX_MAPS_REVIEW_COUNT="100"
 npm run test:headed
 ```
 
-Обычный `npm test` не ходит в Яндекс и пропускает live-тест, если `YANDEX_MAPS_PLACE_URL` не задан.
+После успешной проверки команда сохраняет полный JSON-результат в `artifacts/yandex-maps-reviews.headed.json`. Путь можно переопределить:
+
+```powershell
+$env:YANDEX_MAPS_OUTPUT_FILE="artifacts/my-place-reviews.json"
+npm run test:headed
+```
+
+Обычный `npm test` всегда запускает live-тест на публичной странице из примера и запрашивает минимум 60 отзывов. `YANDEX_MAPS_PLACE_URL` и `YANDEX_MAPS_REVIEW_COUNT` позволяют переопределить страницу и количество; count для live-теста должен быть от 60 до 500. Недоступность сети, CAPTCHA или изменение DOM приводят к падению набора тестов.
 
 ## Структура проекта
 
@@ -152,7 +161,7 @@ npm run test:headed
 - Плагин не решает CAPTCHA автоматически.
 - Если Яндекс показывает challenge/CAPTCHA, collector замедляется, перезагружает страницу и пытается продолжить после последнего найденного отзыва.
 - Если список перестал догружаться, collector возвращает уже найденные отзывы с warning.
-- DOM Яндекс Карт может меняться, поэтому live-тесты вынесены отдельно от обычного набора тестов.
+- DOM Яндекс Карт может меняться; обязательный live-тест обнаруживает такие изменения при каждом запуске `npm test`.
 
 ## Лицензия
 

@@ -1,4 +1,4 @@
-import { chromium, type Browser, type Locator, type Page } from "playwright";
+import { chromium, type Browser, type ElementHandle, type Locator, type Page } from "playwright";
 import type { Clock } from "../../Application/Dependencies/clock.js";
 import type { AppLogger } from "../../Application/Dependencies/logger.js";
 import type { YandexMapsReviewCollector } from "../../Application/Dependencies/yandex-maps-review-collector.js";
@@ -14,11 +14,18 @@ import { normalizeYandexMapsReviewsUrl } from "../../yandex-url.js";
 
 const REVIEW_CARD_SELECTOR = [".business-review-view", "[data-testid*='review']", "[itemprop='review']"].join(", ");
 const REVIEWS_CONTAINER_SELECTOR = ".business-reviews-card-view__reviews-container";
+const SORT_CONTROL_SELECTOR = "div[role=button].rating-ranking-view";
+const SORT_OPTION_SELECTOR = ".rating-ranking-view__popup-line";
+const NEWEST_SORT_TEXT = /^(?:new first|сначала\s+новые|новые\s+сначала|по\s+новизне)$/i;
+const EXPAND_REVIEW_TEXT = /^(?:ещ[её]|more|читать\s+полностью|развернуть)$/i;
 
 const MAX_SCROLLS = 140;
 const MAX_CAPTCHA_RELOADS = 4;
+const MAX_SORT_ATTEMPTS = 3;
 const BASE_DELAY_MS = 450;
 const SLOW_DELAY_MS = 1_600;
+const DOM_READY_TIMEOUT_MS = 30_000;
+const CONTENT_UPDATE_TIMEOUT_MS = 10_000;
 
 export type PlaywrightYandexMapsReviewCollectorOptions = {
   logger: AppLogger;
@@ -49,6 +56,7 @@ export class PlaywrightYandexMapsReviewCollector implements YandexMapsReviewColl
     let reviews: YandexMapsReviewDto[] = [];
     let delayMs = BASE_DELAY_MS;
     let scansWithoutNewReviews = 0;
+    const failedReviewExpansionKeys = new Set<string>();
 
     this.options.logger.info("Starting review collection.", {
       sourceUrl,
@@ -92,7 +100,11 @@ export class PlaywrightYandexMapsReviewCollector implements YandexMapsReviewColl
           }
         }
 
-        const pageReviews = await extractReviewsFromPage(page, options?.signal);
+        const extracted = await extractReviewsWithDiagnostics(page, options?.signal);
+        const pageReviews = extracted.reviews;
+        for (const key of extracted.failedExpansionKeys) {
+          failedReviewExpansionKeys.add(key);
+        }
         const resumeIndex =
           reviews.length > 0 ? findResumeIndex(pageReviews, reviews[reviews.length - 1]?.text ?? "") : -1;
         const newPageReviews = resumeIndex === -1 ? pageReviews : pageReviews.slice(resumeIndex + 1);
@@ -124,13 +136,17 @@ export class PlaywrightYandexMapsReviewCollector implements YandexMapsReviewColl
         const moved = await scrollReviews(page, delayMs, options?.signal);
         stats.scrolls += 1;
         if (!moved) {
-          this.options.logger.info("Review list appears exhausted.");
-          break;
+          this.options.logger.debug("Review list did not load new cards after scrolling.");
         }
       }
 
       if (stats.scrolls >= MAX_SCROLLS && reviews.length < requestedCount) {
         warnings.push(`Stopped after ${MAX_SCROLLS} scrolls with ${reviews.length} reviews collected.`);
+      }
+      if (failedReviewExpansionKeys.size > 0) {
+        warnings.push(
+          `Could not expand the full text of ${failedReviewExpansionKeys.size} review${failedReviewExpansionKeys.size === 1 ? "" : "s"}; visible text was returned.`,
+        );
       }
     } finally {
       await browser?.close();
@@ -155,132 +171,120 @@ async function openReviewsPage(
 ): Promise<void> {
   signal?.throwIfAborted();
   logger.debug("Opening reviews page.");
-  await page.goto(sourceUrl, { waitUntil: "domcontentloaded", timeout: 45_000 });
+  await withAbort(page.goto(sourceUrl, { waitUntil: "domcontentloaded", timeout: 45_000 }), signal);
   signal?.throwIfAborted();
-  await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => undefined);
+  await withAbort(page.waitForLoadState("networkidle", { timeout: 20_000 }), signal).catch((error: unknown) => {
+    signal?.throwIfAborted();
+    if (!(error instanceof Error) || !error.message.includes("Timeout")) {
+      throw error;
+    }
+  });
 }
 
 async function prepareReviewsPage(page: Page, delayMs: number, logger: AppLogger, signal?: AbortSignal): Promise<void> {
   signal?.throwIfAborted();
-  await acceptCookiesIfVisible(page);
-  await clickIfVisible(page, /отзывы/i);
-  await selectNewestSort(page, logger);
-  await expandVisibleReviewTexts(page, signal);
-  await page.waitForTimeout(delayMs);
+  await acceptCookiesIfVisible(page, signal);
+  await clickIfVisible(page, /отзывы/i, signal);
+  await waitForReviewsPageReady(page, signal);
+  await selectNewestSort(page, logger, signal);
+  await waitForTimeout(page, delayMs, signal);
   signal?.throwIfAborted();
   logger.debug("Reviews page prepared.");
 }
 
-async function selectNewestSort(page: Page, logger: AppLogger): Promise<void> {
-  await openSortPopup(page, logger);
+export async function waitForReviewsPageReady(page: Page, signal?: AbortSignal): Promise<void> {
+  const ready = await waitForCondition(
+    async () => {
+      const containerVisible = await page
+        .locator(REVIEWS_CONTAINER_SELECTOR)
+        .first()
+        .isVisible({ timeout: 500 })
+        .catch(() => false);
+      const sortVisible = await page
+        .locator(SORT_CONTROL_SELECTOR)
+        .first()
+        .isVisible({ timeout: 500 })
+        .catch(() => false);
+      const cardCount = await page.locator(REVIEW_CARD_SELECTOR).count().catch(() => 0);
+      return containerVisible && sortVisible && cardCount > 0;
+    },
+    DOM_READY_TIMEOUT_MS,
+    page,
+    signal,
+  );
 
-  const optionClicked = await page
-    .evaluate(() => {
-      const normalize = (value: string | null | undefined) => value?.replace(/\s+/g, " ").trim().toLowerCase() ?? "";
-      const option = Array.from(
-        document.querySelectorAll<HTMLElement>(".rating-ranking-view__popup-line, div"),
-      ).find((element) => {
-        const text = normalize(element.textContent);
-        return (
-          (text === "new first" ||
-            text === "сначала новые" ||
-            text === "новые сначала" ||
-            text === "по новизне") &&
-          String(element.className).includes("rating-ranking-view__popup-line") &&
-          element.offsetParent !== null
-        );
-      });
+  if (!ready) {
+    throw new Error("Yandex Maps reviews page did not expose the expected review list and sort controls.");
+  }
+}
 
-      option?.click();
-      return Boolean(option);
-    })
-    .catch(() => false);
+export async function selectNewestSort(page: Page, logger: AppLogger, signal?: AbortSignal): Promise<void> {
+  const control = page.locator(SORT_CONTROL_SELECTOR).first();
 
-  if (!optionClicked) {
-    const clicked = await clickIfVisible(page, /new first|сначала\s+новые|новые\s+сначала|по\s+новизне/i);
-    if (!clicked) {
-      logger.warn("Could not select newest-first sort control; continuing with visible order.");
+  for (let attempt = 1; attempt <= MAX_SORT_ATTEMPTS; attempt += 1) {
+    signal?.throwIfAborted();
+    const beforeFingerprint = await reviewListFingerprint(page);
+
+    const opened = await clickLocator(control, signal, 3_000);
+    if (!opened) {
+      logger.debug("Could not open the review sort popup.", { attempt });
+      continue;
     }
-    return;
+
+    const option = page.locator(SORT_OPTION_SELECTOR).filter({ hasText: NEWEST_SORT_TEXT }).first();
+    const optionVisible = await waitForCondition(
+      () => option.isVisible({ timeout: 500 }).catch(() => false),
+      3_000,
+      page,
+      signal,
+    );
+    if (!optionVisible || !(await clickLocator(option, signal, 3_000))) {
+      logger.debug("Could not click the newest-first sort option.", { attempt });
+      continue;
+    }
+
+    const confirmed = await waitForCondition(
+      async () => {
+        const sortText = await control.innerText({ timeout: 500 }).catch(() => "");
+        if (!NEWEST_SORT_TEXT.test(normalizeText(sortText))) {
+          return false;
+        }
+
+        const currentFingerprint = await reviewListFingerprint(page);
+        return currentFingerprint !== beforeFingerprint && (await areReviewDatesDescending(page));
+      },
+      CONTENT_UPDATE_TIMEOUT_MS,
+      page,
+      signal,
+    );
+    if (confirmed) {
+      logger.debug("Newest-first review sort confirmed.", { attempt });
+      return;
+    }
+
+    logger.debug("Newest-first review sort was not confirmed after clicking.", { attempt });
   }
 
-  await page.waitForTimeout(1_000);
-  const sortText = await page
-    .locator("div[role=button].rating-ranking-view")
-    .first()
-    .innerText({ timeout: 2_000 })
-    .catch(() => "");
-  if (!/new first|сначала\s+новые|новые\s+сначала|по\s+новизне/i.test(sortText)) {
-    logger.warn("Newest-first sort was clicked but not confirmed in the control text.", { sortText });
-  }
+  throw new Error(`Could not confirm newest-first review sorting after ${MAX_SORT_ATTEMPTS} attempts.`);
 }
 
-async function openSortPopup(page: Page, logger: AppLogger): Promise<void> {
-  const openedByMouse = await page
-    .locator("div[role=button].rating-ranking-view")
-    .first()
-    .click({ timeout: 3_000 })
-    .then(() => true)
-    .catch(() => false);
-
-  await page.waitForTimeout(1_000);
-  if (await hasSortPopup(page)) {
-    return;
+async function areReviewDatesDescending(page: Page): Promise<boolean> {
+  const values = await page
+    .locator(REVIEW_CARD_SELECTOR)
+    .locator("meta[itemprop='datePublished']")
+    .evaluateAll((elements) =>
+      elements
+        .slice(0, 20)
+        .map((element) => element.getAttribute("content"))
+        .filter((value): value is string => Boolean(value)),
+    )
+    .catch(() => [] as string[]);
+  const timestamps = values.map((value) => Date.parse(value)).filter(Number.isFinite);
+  if (timestamps.length < 2) {
+    return false;
   }
 
-  if (!openedByMouse) {
-    logger.debug("Sort control was not clickable through Playwright locator; trying DOM event dispatch.");
-  }
-
-  const dispatched = await page
-    .evaluate(() => {
-      const sortBtn = document.querySelector<HTMLElement>("div[role=button].rating-ranking-view");
-      if (!sortBtn) {
-        return false;
-      }
-
-      const rect = sortBtn.getBoundingClientRect();
-      const clientX = rect.x + rect.width / 2;
-      const clientY = rect.y + rect.height / 2;
-      const pointerBase = {
-        bubbles: true,
-        cancelable: true,
-        clientX,
-        clientY,
-        pointerId: 1,
-        pointerType: "mouse",
-        isPrimary: true,
-      };
-      const mouseBase = {
-        bubbles: true,
-        cancelable: true,
-        clientX,
-        clientY,
-        button: 0,
-      };
-
-      sortBtn.dispatchEvent(new PointerEvent("pointerdown", pointerBase));
-      sortBtn.dispatchEvent(new MouseEvent("mousedown", mouseBase));
-      sortBtn.dispatchEvent(new PointerEvent("pointerup", pointerBase));
-      sortBtn.dispatchEvent(new MouseEvent("mouseup", mouseBase));
-      sortBtn.dispatchEvent(new MouseEvent("click", mouseBase));
-      return true;
-    })
-    .catch(() => false);
-
-  if (!dispatched) {
-    await clickIfVisible(page, /by default|по умолчанию|сначала|новые|по новизне/i);
-  }
-
-  await page.waitForTimeout(2_000);
-}
-
-async function hasSortPopup(page: Page): Promise<boolean> {
-  return page
-    .locator(".rating-ranking-view__popup-line")
-    .first()
-    .isVisible({ timeout: 500 })
-    .catch(() => false);
+  return timestamps.every((value, index) => index === 0 || timestamps[index - 1]! >= value);
 }
 
 async function recoverFromCaptcha(args: {
@@ -318,10 +322,20 @@ async function recoverFromCaptcha(args: {
     return { recovered: false, delayMs: nextDelayMs };
   }
 
-  await args.page.waitForTimeout(nextDelayMs);
+  await waitForTimeout(args.page, nextDelayMs, args.signal);
   args.signal?.throwIfAborted();
-  await args.page.goto(args.sourceUrl, { waitUntil: "domcontentloaded", timeout: 45_000 });
-  await args.page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => undefined);
+  await withAbort(
+    args.page.goto(args.sourceUrl, { waitUntil: "domcontentloaded", timeout: 45_000 }),
+    args.signal,
+  );
+  await withAbort(args.page.waitForLoadState("networkidle", { timeout: 20_000 }), args.signal).catch(
+    (error: unknown) => {
+      args.signal?.throwIfAborted();
+      if (!(error instanceof Error) || !error.message.includes("Timeout")) {
+        throw error;
+      }
+    },
+  );
   await prepareReviewsPage(args.page, nextDelayMs, args.logger, args.signal);
 
   if (lastText !== undefined) {
@@ -353,21 +367,79 @@ async function scrollUntilText(
 }
 
 export async function extractReviewsFromPage(page: Page, signal?: AbortSignal): Promise<YandexMapsReviewDto[]> {
-  await expandVisibleReviewTexts(page, signal);
+  return (await extractReviewsWithDiagnostics(page, signal)).reviews;
+}
+
+export async function extractReviewsWithDiagnostics(
+  page: Page,
+  signal?: AbortSignal,
+): Promise<{ reviews: YandexMapsReviewDto[]; failedExpansionKeys: string[] }> {
   const cards = page.locator(REVIEW_CARD_SELECTOR);
   const count = await cards.count();
   const reviews: YandexMapsReviewDto[] = [];
+  const failedExpansionKeys: string[] = [];
 
   for (let index = 0; index < count; index += 1) {
     signal?.throwIfAborted();
     const card = cards.nth(index);
+    const expansion = await expandReviewText(card, page, signal);
+    if (expansion.failureKey !== undefined) {
+      failedExpansionKeys.push(expansion.failureKey);
+    }
     const review = await extractReview(card);
     if (review !== null) {
       reviews.push(review);
     }
   }
 
-  return reviews;
+  return { reviews, failedExpansionKeys };
+}
+
+async function expandReviewText(
+  card: Locator,
+  page: Page,
+  signal?: AbortSignal,
+): Promise<{ failureKey?: string }> {
+  signal?.throwIfAborted();
+  const button = card.getByText(EXPAND_REVIEW_TEXT).first();
+  const visible = await button.isVisible({ timeout: 250 }).catch(() => false);
+  if (!visible) {
+    return {};
+  }
+
+  const beforeText = await firstText(card, [
+    ".business-review-view__body-text",
+    ".business-review-view__body",
+    "[class*='body-text']",
+    "[class*='review'][class*='text']",
+    "[itemprop='reviewBody']",
+  ]);
+  const clicked = await clickLocator(button, signal, 2_000);
+  const expanded =
+    clicked &&
+    (await waitForCondition(
+      async () => {
+        const currentText = await firstText(card, [
+          ".business-review-view__body-text",
+          ".business-review-view__body",
+          "[class*='body-text']",
+          "[class*='review'][class*='text']",
+          "[itemprop='reviewBody']",
+        ]);
+        const buttonStillVisible = await button.isVisible({ timeout: 250 }).catch(() => false);
+        return normalizeText(currentText) !== normalizeText(beforeText) || !buttonStillVisible;
+      },
+      2_500,
+      page,
+      signal,
+    ));
+
+  if (expanded) {
+    return {};
+  }
+
+  const key = normalizeText(beforeText).slice(0, 200) || `card-${await card.getAttribute("data-review-id").catch(() => null) ?? "unknown"}`;
+  return { failureKey: key };
 }
 
 async function extractReview(card: Locator): Promise<YandexMapsReviewDto | null> {
@@ -440,38 +512,70 @@ function absoluteYandexUrl(href: string): string {
   }
 }
 
-async function scrollReviews(page: Page, delayMs: number, signal?: AbortSignal): Promise<boolean> {
+export async function scrollReviews(page: Page, delayMs: number, signal?: AbortSignal): Promise<boolean> {
   signal?.throwIfAborted();
   const before = await page.locator(REVIEW_CARD_SELECTOR).count().catch(() => 0);
   const beforeFingerprint = await reviewListFingerprint(page);
-  const beforeScrollState = await scrollState(page);
-  const scrollTarget = page.locator(REVIEWS_CONTAINER_SELECTOR).first();
-
-  await page.locator(REVIEW_CARD_SELECTOR).last().scrollIntoViewIfNeeded({ timeout: 2_000 }).catch(() => undefined);
-
-  if ((await scrollTarget.count()) > 0) {
-    await scrollTarget.evaluate((element) => {
-      element.scrollBy({ top: 5_000, behavior: "instant" });
-    });
+  const cards = page.locator(REVIEW_CARD_SELECTOR);
+  if (before === 0) {
+    return false;
   }
 
-  await page.evaluate(() => {
-    window.scrollBy(0, 5_000);
-    const scrollables = Array.from(document.querySelectorAll<HTMLElement>("body, html, main, div"));
-    for (const element of scrollables) {
-      if (element.scrollHeight > element.clientHeight) {
-        element.scrollBy({ top: 5_000, behavior: "instant" });
+  const scrollContainer = await findReviewsScrollContainer(page);
+  if (scrollContainer === null) {
+    return false;
+  }
+
+  try {
+    await cards.last().scrollIntoViewIfNeeded({ timeout: 3_000 }).catch(() => undefined);
+    signal?.throwIfAborted();
+    await scrollContainer.hover().catch(() => undefined);
+    await scrollContainer.evaluate((element) => {
+      element.scrollTo({ top: element.scrollHeight, behavior: "instant" });
+    });
+    await page.mouse.wheel(0, 4_000);
+    await waitForTimeout(page, Math.max(delayMs, 500), signal);
+
+    return waitForCondition(
+      async () => {
+        const after = await page.locator(REVIEW_CARD_SELECTOR).count().catch(() => 0);
+        if (after > before) {
+          return true;
+        }
+        return (await reviewListFingerprint(page)) !== beforeFingerprint;
+      },
+      CONTENT_UPDATE_TIMEOUT_MS,
+      page,
+      signal,
+    );
+  } finally {
+    await scrollContainer.dispose();
+  }
+}
+
+async function findReviewsScrollContainer(page: Page): Promise<ElementHandle<HTMLElement> | null> {
+  const source = page.locator(REVIEWS_CONTAINER_SELECTOR).first();
+  if ((await source.count().catch(() => 0)) === 0) {
+    return null;
+  }
+
+  const handle = await source.evaluateHandle((element) => {
+    let current: HTMLElement | null = element.parentElement;
+    while (current !== null) {
+      const style = getComputedStyle(current);
+      if (current.scrollHeight > current.clientHeight && /auto|scroll/.test(style.overflowY)) {
+        return current;
       }
+      current = current.parentElement;
     }
+    return null;
   });
-  await page.mouse.wheel(0, 4_000);
-  await page.waitForTimeout(Math.max(delayMs, 1_500));
-  signal?.throwIfAborted();
-  await expandVisibleReviewTexts(page, signal);
-  const after = await page.locator(REVIEW_CARD_SELECTOR).count().catch(() => 0);
-  const afterFingerprint = await reviewListFingerprint(page);
-  const afterScrollState = await scrollState(page);
-  return after > before || afterFingerprint !== beforeFingerprint || afterScrollState !== beforeScrollState;
+  const element = handle.asElement();
+  if (element === null) {
+    await handle.dispose();
+    return null;
+  }
+  return element as ElementHandle<HTMLElement>;
 }
 
 async function reviewListFingerprint(page: Page): Promise<string> {
@@ -486,44 +590,82 @@ async function reviewListFingerprint(page: Page): Promise<string> {
     .catch(() => "");
 }
 
-async function scrollState(page: Page): Promise<string> {
-  return page
-    .evaluate(() => {
-      const states = [`window:${window.scrollY}`];
-      for (const element of Array.from(
-        document.querySelectorAll<HTMLElement>("main, [class*='scroll'], [class*='panel']"),
-      )) {
-        if (element.scrollHeight > element.clientHeight) {
-          states.push(`${element.className}:${element.scrollTop}`);
-        }
-      }
-      return states.join("|");
-    })
-    .catch(() => "");
-}
-
-async function expandVisibleReviewTexts(page: Page, signal?: AbortSignal): Promise<void> {
-  const buttons = page.getByText(/ещ[её]|more|читать полностью|развернуть/i);
-  const count = Math.min(await buttons.count().catch(() => 0), 20);
-
-  for (let index = 0; index < count; index += 1) {
+async function waitForCondition(
+  condition: () => Promise<boolean>,
+  timeoutMs: number,
+  page: Page,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
     signal?.throwIfAborted();
-    await buttons.nth(index).click({ timeout: 1_000 }).catch(() => undefined);
+    if (await condition()) {
+      return true;
+    }
+    await waitForTimeout(page, Math.min(250, Math.max(deadline - Date.now(), 0)), signal);
   }
+  signal?.throwIfAborted();
+  return condition();
 }
 
-async function clickIfVisible(page: Page, label: RegExp): Promise<boolean> {
+async function waitForTimeout(page: Page, timeoutMs: number, signal?: AbortSignal): Promise<void> {
+  let remaining = timeoutMs;
+  while (remaining > 0) {
+    signal?.throwIfAborted();
+    const chunk = Math.min(remaining, 250);
+    await page.waitForTimeout(chunk);
+    remaining -= chunk;
+  }
+  signal?.throwIfAborted();
+}
+
+async function clickLocator(locator: Locator, signal?: AbortSignal, timeout = 2_000): Promise<boolean> {
+  signal?.throwIfAborted();
+  const clicked = await locator
+    .click({ timeout })
+    .then(() => true)
+    .catch(() => false);
+  signal?.throwIfAborted();
+  return clicked;
+}
+
+function withAbort<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (signal === undefined) {
+    return operation;
+  }
+  signal.throwIfAborted();
+
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => {
+      signal.removeEventListener("abort", abort);
+      reject(signal.reason);
+    };
+    signal.addEventListener("abort", abort, { once: true });
+    operation.then(
+      (value) => {
+        signal.removeEventListener("abort", abort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", abort);
+        reject(error);
+      },
+    );
+  });
+}
+
+export async function clickIfVisible(page: Page, label: RegExp, signal?: AbortSignal): Promise<boolean> {
+  signal?.throwIfAborted();
   const target = page.getByText(label).first();
-  if ((await target.count().catch(() => 0)) === 0) {
+  if (!(await target.isVisible({ timeout: 500 }).catch(() => false))) {
     return false;
   }
 
-  await target.click({ timeout: 2_000 }).catch(() => undefined);
-  return true;
+  return clickLocator(target, signal, 2_000);
 }
 
-async function acceptCookiesIfVisible(page: Page): Promise<void> {
-  await clickIfVisible(page, /принять|соглас|accept|agree/i);
+async function acceptCookiesIfVisible(page: Page, signal?: AbortSignal): Promise<void> {
+  await clickIfVisible(page, /принять|соглас|accept|agree/i, signal);
 }
 
 export async function isCaptchaOrChallenge(page: Page): Promise<boolean> {
