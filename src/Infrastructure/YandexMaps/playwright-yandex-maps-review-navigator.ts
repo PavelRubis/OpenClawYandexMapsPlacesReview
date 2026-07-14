@@ -229,8 +229,10 @@ export class PlaywrightYandexMapsReviewNavigator implements YandexMapsReviewNavi
 
   private async expandReviewText(card: Locator, page: Page, signal?: AbortSignal): Promise<void> {
     signal?.throwIfAborted();
-    const button = card.getByText(EXPAND_REVIEW_TEXT).first();
-    const visible = await button.isVisible({ timeout: 250 }).catch(() => false);
+    const roleButton = card.getByRole("button", { name: EXPAND_REVIEW_TEXT }).first();
+    const roleButtonVisible = await roleButton.isVisible({ timeout: 250 }).catch(() => false);
+    const button = roleButtonVisible ? roleButton : card.getByText(EXPAND_REVIEW_TEXT).first();
+    const visible = roleButtonVisible || (await button.isVisible({ timeout: 250 }).catch(() => false));
     if (!visible) {
       return;
     }

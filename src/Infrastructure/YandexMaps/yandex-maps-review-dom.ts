@@ -17,4 +17,4 @@ export const REVIEW_BODY_SELECTORS = [
 ];
 
 export const NEWEST_SORT_TEXT = /^(?:new first|сначала\s+новые|новые\s+сначала|по\s+новизне)$/i;
-export const EXPAND_REVIEW_TEXT = /^(?:ещ[её]|more|читать\s+полностью|развернуть)$/i;
+export const EXPAND_REVIEW_TEXT = /^(?:(?:…|\.\.\.)\s*)?(?:ещ[её]|more|читать\s+полностью|развернуть)$/i;

@@ -58,7 +58,6 @@ export class PlaywrightYandexMapsReviewCollector implements YandexMapsReviewColl
     let reviews: YandexMapsReviewDto[] = [];
     let delayMs = BASE_DELAY_MS;
     let scansWithoutNewReviews = 0;
-    const failedReviewExpansionKeys = new Set<string>();
 
     this.options.logger.info("Starting review collection.", {
       sourceUrl,
@@ -92,11 +91,9 @@ export class PlaywrightYandexMapsReviewCollector implements YandexMapsReviewColl
 
         await this.options.navigator.expandReviewTexts(session.page, options?.signal);
         const extracted = await this.options.parser.extractReviewsWithDiagnostics(session.page, options?.signal);
-        for (const key of extracted.failedExpansionKeys) {
-          failedReviewExpansionKeys.add(key);
-        }
 
         const pageReviews = extracted.reviews;
+        reviews = this.replaceTruncatedReviews(reviews, pageReviews);
         const resumeIndex =
           reviews.length > 0 ? this.findResumeIndex(pageReviews, reviews[reviews.length - 1]?.text ?? "") : -1;
         const newPageReviews = resumeIndex === -1 ? pageReviews : pageReviews.slice(resumeIndex + 1);
@@ -135,9 +132,12 @@ export class PlaywrightYandexMapsReviewCollector implements YandexMapsReviewColl
       if (stats.scrolls >= MAX_SCROLLS && reviews.length < requestedCount) {
         warnings.push(`Stopped after ${MAX_SCROLLS} scrolls with ${reviews.length} reviews collected.`);
       }
-      if (failedReviewExpansionKeys.size > 0) {
+      const truncatedReviewCount = reviews.filter(
+        (review) => this.truncatedTextPrefix(review.text) !== undefined,
+      ).length;
+      if (truncatedReviewCount > 0) {
         warnings.push(
-          `Could not expand the full text of ${failedReviewExpansionKeys.size} review${failedReviewExpansionKeys.size === 1 ? "" : "s"}; visible text was returned.`,
+          `Could not expand the full text of ${truncatedReviewCount} review${truncatedReviewCount === 1 ? "" : "s"}; visible text was returned.`,
         );
       }
     } finally {
@@ -234,6 +234,42 @@ export class PlaywrightYandexMapsReviewCollector implements YandexMapsReviewColl
     }
 
     return { reviews, duplicates };
+  }
+
+  private replaceTruncatedReviews(
+    existing: YandexMapsReviewDto[],
+    incoming: YandexMapsReviewDto[],
+  ): YandexMapsReviewDto[] {
+    return existing.map((review) => {
+      const truncatedPrefix = this.truncatedTextPrefix(review.text);
+      if (truncatedPrefix === undefined) {
+        return review;
+      }
+
+      const replacement = incoming.find((candidate) => {
+        if (candidate.date.trim() !== review.date.trim()) {
+          return false;
+        }
+        if (review.url !== undefined && candidate.url !== undefined && review.url !== candidate.url) {
+          return false;
+        }
+
+        const candidateText = this.normalizeText(candidate.text);
+        return candidateText.length > truncatedPrefix.length && candidateText.startsWith(truncatedPrefix);
+      });
+
+      return replacement === undefined
+        ? review
+        : { ...replacement, ...(replacement.url === undefined && review.url !== undefined ? { url: review.url } : {}) };
+    });
+  }
+
+  private truncatedTextPrefix(text: string): string | undefined {
+    const normalized = this.normalizeText(text);
+    if (!/(?:…|\.\.\.)\s*(?:ещ[её]|more)$/i.test(normalized)) {
+      return undefined;
+    }
+    return normalized.replace(/(?:…|\.\.\.)\s*(?:ещ[её]|more)$/i, "").trim();
   }
 
   private reviewKey(review: YandexMapsReviewDto): string {

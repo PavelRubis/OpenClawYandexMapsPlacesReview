@@ -92,7 +92,9 @@ describe("Playwright Yandex Maps review components", () => {
       <div class="business-review-view">
         <meta itemprop="datePublished" content="2026-07-10T00:00:00.000Z">
         <div class="business-review-view__body-text" id="expandable">Короткий текст… ещё</div>
-        <button id="more">ещё</button>
+        <span class="spoiler-view__button">
+          <span class="business-review-view__expand" id="more" role="button" aria-label="Ещё">Ещё</span>
+        </span>
       </div>
       <script>
         window.unrelatedClicks = 0;

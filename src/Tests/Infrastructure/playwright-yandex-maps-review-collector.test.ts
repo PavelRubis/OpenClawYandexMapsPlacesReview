@@ -70,6 +70,40 @@ describe("PlaywrightYandexMapsReviewCollector orchestration", () => {
     expect(result.stats.scrolls).toBe(2);
   });
 
+  it("replaces an earlier truncated review with its expanded text on a later scan", async () => {
+    const navigator = new FakeNavigator();
+    const parser = new FakeParser([
+      extracted(
+        [
+          { date: "2026-07-02", text: "A sufficiently distinctive long review prefix… ещё" },
+          { date: "2026-07-01", text: "Resume point" },
+        ],
+        ["A sufficiently distinctive long review prefix"],
+      ),
+      extracted([
+        {
+          date: "2026-07-02",
+          text: "A sufficiently distinctive long review prefix with the complete ending.",
+        },
+        { date: "2026-07-01", text: "Resume point" },
+        { date: "2026-06-30", text: "Third review" },
+      ]),
+    ]);
+    const collector = createCollector(navigator, parser);
+
+    const result = await collector.collect({ url: placeUrl, count: 3 });
+
+    expect(result.reviews).toEqual([
+      {
+        date: "2026-07-02",
+        text: "A sufficiently distinctive long review prefix with the complete ending.",
+      },
+      { date: "2026-07-01", text: "Resume point" },
+      { date: "2026-06-30", text: "Third review" },
+    ]);
+    expect(result.warnings).toBeUndefined();
+  });
+
   it("recovers from CAPTCHA, resumes after the last review, and increases the delay", async () => {
     const navigator = new FakeNavigator();
     const parser = new FakeParser(
@@ -215,8 +249,8 @@ function createCollector(navigator: YandexMapsReviewNavigator, parser: YandexMap
   return new PlaywrightYandexMapsReviewCollector({ logger, clock, navigator, parser });
 }
 
-function extracted(reviews: YandexMapsReviewDto[]): ExtractedReviews {
-  return { reviews, failedExpansionKeys: [] };
+function extracted(reviews: YandexMapsReviewDto[], failedExpansionKeys: string[] = []): ExtractedReviews {
+  return { reviews, failedExpansionKeys };
 }
 
 function review(id: string): YandexMapsReviewDto {
