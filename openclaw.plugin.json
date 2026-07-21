@@ -2,7 +2,7 @@
   "id": "yandex-maps-places-review",
   "name": "Yandex Maps Places Review",
   "description": "Collect recent public Yandex Maps place reviews with browser automation.",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "configSchema": {
     "type": "object",
     "properties": {

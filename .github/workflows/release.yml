@@ -141,10 +141,14 @@ jobs:
       - name: Publish verified package
         shell: bash
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           PACKAGE_VERSION: ${{ needs.verify.outputs.package_version }}
           TARBALL_NAME: ${{ needs.verify.outputs.tarball_name }}
         run: |
+          if [[ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" || -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]]; then
+            echo "GitHub OIDC is unavailable. Ensure this job has the id-token: write permission." >&2
+            exit 1
+          fi
+
           package_spec="@sharleysoft/openclaw-yandex-maps-places-review@$PACKAGE_VERSION"
           local_integrity="sha512-$(openssl dgst -sha512 -binary "./package/$TARBALL_NAME" | openssl base64 -A)"
 
