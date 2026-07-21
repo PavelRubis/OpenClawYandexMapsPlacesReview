@@ -14,11 +14,24 @@ describe("live Yandex Maps review collector", () => {
     "collects recent reviews from a real Yandex Maps place page",
     async () => {
       const handlers = createToolCallHandlers({ logLevel: "info" });
-      const result = await handlers.getYandexMapsPlaceReviews.handle({
-        url: liveUrl,
-        count: liveCount,
-        headed,
-      });
+      const result = await handlers.getYandexMapsPlaceReviews
+        .handle({
+          url: liveUrl,
+          count: liveCount,
+          headed,
+        })
+        .catch(async (error: unknown) => {
+          await writeLiveOutput({
+            status: "failed",
+            sourceUrl: liveUrl,
+            requestedCount: liveCount,
+            failedAt: new Date().toISOString(),
+            error: serializeError(error),
+          });
+          throw error;
+        });
+
+      await writeLiveOutput(result);
 
       const resultUrl = new URL(result.sourceUrl);
       expect(resultUrl.pathname.includes("/reviews/") || resultUrl.searchParams.get("tab") === "reviews").toBe(true);
@@ -35,19 +48,38 @@ describe("live Yandex Maps review collector", () => {
           expect(timestamps[index - 1]).toBeGreaterThanOrEqual(timestamps[index]!);
         }
       }
-
-      if (headed) {
-        const outputPath = resolve(
-          process.env.YANDEX_MAPS_OUTPUT_FILE ?? "artifacts/yandex-maps-reviews.headed.json",
-        );
-        await mkdir(dirname(outputPath), { recursive: true });
-        await writeFile(outputPath, `${JSON.stringify(result, null, 2)}\n`, "utf8");
-        console.info(`Headed live-test output written to ${outputPath}`);
-      }
     },
     300_000,
   );
 });
+
+async function writeLiveOutput(value: unknown): Promise<void> {
+  if (!headed && process.env.YANDEX_MAPS_OUTPUT_FILE === undefined) {
+    return;
+  }
+
+  const outputPath = resolve(
+    process.env.YANDEX_MAPS_OUTPUT_FILE ?? "artifacts/yandex-maps-reviews.headed.json",
+  );
+  await mkdir(dirname(outputPath), { recursive: true });
+  await writeFile(outputPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  console.info(`Live-test output written to ${outputPath}`);
+}
+
+function serializeError(error: unknown): { name: string; message: string; stack?: string } {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      ...(error.stack === undefined ? {} : { stack: error.stack }),
+    };
+  }
+
+  return {
+    name: "UnknownError",
+    message: String(error),
+  };
+}
 
 function normalizeLiveCount(value: string | undefined): number {
   if (value === undefined) {

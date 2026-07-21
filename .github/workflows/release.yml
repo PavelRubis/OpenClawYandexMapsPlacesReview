@@ -1,0 +1,183 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  verify:
+    name: Verify live behavior and package
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: "0"
+
+    outputs:
+      package_version: ${{ steps.package.outputs.version }}
+      tarball_name: ${{ steps.pack.outputs.tarball_name }}
+
+    steps:
+      - name: Check out the release tag
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Use the release npm version
+        run: npm install --global npm@11.16.0
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium and Linux dependencies
+        run: npx playwright install --with-deps chromium
+
+      - name: Build cleanly
+        run: npm run build
+
+      - name: Check release metadata and tag
+        id: package
+        shell: bash
+        run: |
+          npm run release:metadata -- --tag "$GITHUB_REF_NAME"
+          package_version="$(node -p 'require("./package.json").version')"
+          echo "version=$package_version" >> "$GITHUB_OUTPUT"
+
+      - name: Run deterministic tests
+        run: npm run test:unit
+
+      - name: Run mandatory live test
+        shell: bash
+        env:
+          DEBUG: pw:api
+          YANDEX_MAPS_REVIEW_COUNT: "60"
+          YANDEX_MAPS_OUTPUT_FILE: artifacts/yandex-maps-reviews.live.json
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          npm run test:live 2>&1 | tee artifacts/live-test.log
+
+      - name: Build and validate the plugin manifest
+        run: |
+          npm run plugin:build
+          npm run plugin:validate
+
+      - name: Pack the release artifact
+        id: pack
+        shell: bash
+        run: |
+          mkdir -p artifacts/package
+          npm pack --pack-destination artifacts/package
+          mapfile -t tarballs < <(find artifacts/package -maxdepth 1 -type f -name '*.tgz')
+          test "${#tarballs[@]}" -eq 1
+          tarball_name="$(basename "${tarballs[0]}")"
+          echo "tarball_name=$tarball_name" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke-test the packed plugin
+        shell: bash
+        env:
+          OPENCLAW_STATE_DIR: ${{ runner.temp }}/openclaw-state
+          TARBALL_NAME: ${{ steps.pack.outputs.tarball_name }}
+        run: |
+          mkdir -p "$OPENCLAW_STATE_DIR"
+          node ./node_modules/openclaw/openclaw.mjs plugins install "npm-pack:$GITHUB_WORKSPACE/artifacts/package/$TARBALL_NAME"
+          node ./node_modules/openclaw/openclaw.mjs plugins inspect yandex-maps-places-review --runtime --json | tee artifacts/plugin-inspect.json
+
+      - name: Upload release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-package
+          path: artifacts/package/*.tgz
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+
+      - name: Upload release diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-diagnostics
+          path: |
+            artifacts/*.json
+            artifacts/*.log
+            test-results/**
+          if-no-files-found: warn
+          overwrite: true
+          retention-days: 14
+
+  publish:
+    name: Publish to npm
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Use the release npm version
+        run: npm install --global npm@11.16.0
+
+      - name: Download verified package
+        uses: actions/download-artifact@v4
+        with:
+          name: release-package
+          path: package
+
+      - name: Publish verified package
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PACKAGE_VERSION: ${{ needs.verify.outputs.package_version }}
+          TARBALL_NAME: ${{ needs.verify.outputs.tarball_name }}
+        run: |
+          package_spec="@sharleysoft/openclaw-yandex-maps-places-review@$PACKAGE_VERSION"
+          local_integrity="sha512-$(openssl dgst -sha512 -binary "package/$TARBALL_NAME" | openssl base64 -A)"
+          published_integrity="$(npm view "$package_spec" dist.integrity --json 2>/dev/null | tr -d '"' || true)"
+
+          if [[ -z "$published_integrity" ]]; then
+            npm publish "package/$TARBALL_NAME"
+          elif [[ "$published_integrity" == "$local_integrity" ]]; then
+            echo "$package_spec is already published with the verified integrity; continuing the rerun."
+          else
+            echo "$package_spec already exists with different integrity." >&2
+            exit 1
+          fi
+
+  github-release:
+    name: Create GitHub Release
+    needs:
+      - verify
+      - publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download published package
+        uses: actions/download-artifact@v4
+        with:
+          name: release-package
+          path: package
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PACKAGE_VERSION: ${{ needs.verify.outputs.package_version }}
+          TARBALL_NAME: ${{ needs.verify.outputs.tarball_name }}
+        run: gh release create "$GITHUB_REF_NAME" "package/$TARBALL_NAME" --verify-tag --generate-notes --title "v$PACKAGE_VERSION"

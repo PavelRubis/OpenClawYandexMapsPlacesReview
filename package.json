@@ -1,10 +1,13 @@
 {
-  "name": "openclaw-yandex-maps-places-review",
-  "version": "0.1.0",
+  "name": "@sharleysoft/openclaw-yandex-maps-places-review",
+  "version": "0.1.1",
   "description": "OpenClaw tool plugin that collects recent Yandex Maps place reviews with Playwright.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "openclaw-yandex-maps-places-review": "./dist/Cli/setup-playwright.js"
+  },
   "files": [
     "dist",
     "openclaw.plugin.json",
@@ -12,11 +15,15 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "plugin:build": "npm run build && node ./node_modules/openclaw/openclaw.mjs plugins build --entry ./src/index.ts",
-    "plugin:validate": "npm run build && node ./node_modules/openclaw/openclaw.mjs plugins validate --entry ./src/index.ts",
-    "test": "cross-env PLAYWRIGHT_BROWSERS_PATH=0 vitest run",
-    "verify": "npm run build && npm test && npm run plugin:build && npm run plugin:validate",
+    "clean": "node ./scripts/clean-dist.mjs",
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "plugin:build": "node ./node_modules/openclaw/openclaw.mjs plugins build --entry ./dist/index.js",
+    "plugin:validate": "node ./node_modules/openclaw/openclaw.mjs plugins validate --entry ./dist/index.js",
+    "release:metadata": "node ./scripts/check-release-metadata.mjs",
+    "prepack": "npm run build && npm run plugin:build && npm run plugin:validate && npm run release:metadata",
+    "test": "npm run test:unit",
+    "test:unit": "cross-env PLAYWRIGHT_BROWSERS_PATH=0 vitest run --exclude \"src/**/*.live.test.ts\"",
+    "verify": "npm run build && npm run test:unit && npm run test:live && npm run plugin:build && npm run plugin:validate && npm run release:metadata",
     "test:live": "cross-env PLAYWRIGHT_BROWSERS_PATH=0 vitest run src/Tests/Infrastructure/playwright-yandex-maps-review-collector.live.test.ts",
     "test:headed": "cross-env PLAYWRIGHT_BROWSERS_PATH=0 HEADED=1 vitest run src/Tests/Infrastructure/playwright-yandex-maps-review-collector.live.test.ts",
     "run:tool": "cross-env PLAYWRIGHT_BROWSERS_PATH=0 tsx scripts/run-tool.ts"
@@ -28,7 +35,18 @@
     "yandex-maps",
     "reviews"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PavelRubis/OpenClawYandexMapsPlacesReview.git"
+  },
+  "homepage": "https://github.com/PavelRubis/OpenClawYandexMapsPlacesReview#readme",
+  "bugs": {
+    "url": "https://github.com/PavelRubis/OpenClawYandexMapsPlacesReview/issues"
+  },
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=22.19.0"
   },
@@ -39,7 +57,7 @@
     "typebox": "^1.1.38"
   },
   "peerDependencies": {
-    "openclaw": ">=2026.5.17"
+    "openclaw": ">=2026.6.11"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
@@ -51,10 +69,15 @@
   },
   "openclaw": {
     "extensions": [
-      "./src/index.ts"
-    ],
-    "runtimeExtensions": [
       "./dist/index.js"
-    ]
+    ],
+    "compat": {
+      "pluginApi": ">=2026.6.11"
+    },
+    "install": {
+      "npmSpec": "@sharleysoft/openclaw-yandex-maps-places-review",
+      "defaultChoice": "npm",
+      "minHostVersion": ">=2026.6.11"
+    }
   }
 }
