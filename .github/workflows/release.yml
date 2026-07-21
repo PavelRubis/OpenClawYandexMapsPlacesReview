@@ -147,7 +147,20 @@ jobs:
         run: |
           package_spec="@sharleysoft/openclaw-yandex-maps-places-review@$PACKAGE_VERSION"
           local_integrity="sha512-$(openssl dgst -sha512 -binary "package/$TARBALL_NAME" | openssl base64 -A)"
-          published_integrity="$(npm view "$package_spec" dist.integrity --json 2>/dev/null | tr -d '"' || true)"
+
+          set +e
+          npm_view_output="$(npm view "$package_spec" dist.integrity --json 2>&1)"
+          npm_view_status=$?
+          set -e
+
+          if [[ $npm_view_status -eq 0 ]]; then
+            published_integrity="$(printf '%s' "$npm_view_output" | tr -d '"\r\n')"
+          elif grep -q 'E404' <<<"$npm_view_output"; then
+            published_integrity=""
+          else
+            echo "$npm_view_output" >&2
+            exit "$npm_view_status"
+          fi
 
           if [[ -z "$published_integrity" ]]; then
             npm publish "package/$TARBALL_NAME"
