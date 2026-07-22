@@ -1,35 +1,37 @@
+[Русская версия](./README.ru.md)
+
 # OpenClaw Yandex Maps Places Review
 
-Tool-плагин для OpenClaw, который собирает последние публичные отзывы заведения на Яндекс Картах через Playwright.
+An OpenClaw tool plugin that uses Playwright to collect the latest public reviews for a place on Yandex Maps.
 
-Плагин не использует API Яндекса. Он открывает публичную страницу заведения в браузере, переходит на страницу отзывов, пытается отсортировать отзывы по новизне и возвращает найденные отзывы в JSON.
+The plugin does not use the Yandex API. It opens the place's public page in a browser, navigates to its reviews, attempts to sort them by newest first, and returns the reviews it finds as JSON.
 
-## Возможности
+## Features
 
-- Tool `yandex_maps_place_reviews`.
-- Принимает ссылку на заведение в Яндекс Картах.
-- Возвращает последние `N` отзывов, по умолчанию `100`.
-- Если отзывов меньше запрошенного количества или Яндекс перестал догружать список, возвращает доступные отзывы и warning.
-- Для каждого отзыва возвращает `url`, если ссылку удалось извлечь, `date` и `text`.
-- Поддерживает уровни логирования через config плагина.
-- Есть обычные тесты, live-тест и headed live-тест с видимым браузером.
+- Provides the `yandex_maps_place_reviews` tool.
+- Accepts a link to a place on Yandex Maps.
+- Returns the latest `N` reviews; the default is `100`.
+- If fewer reviews are available than requested or Yandex stops loading more reviews, returns the available reviews with a warning.
+- Returns `url` when it can be extracted, `date`, and `text` for each review.
+- Supports configurable logging levels through the plugin configuration.
+- Includes regular tests, a live test, and a headed live test with a visible browser.
 
-## Требования
+## Requirements
 
-- Node.js `22.19+`; рекомендуется Node.js `24`.
+- Node.js `22.19+`; Node.js `24` is recommended.
 - npm.
-- OpenClaw `2026.6.11+` для установки плагина.
+- OpenClaw `2026.6.11+` to install the plugin.
 - Playwright Chromium.
 
-Проверьте версию Node:
+Check your Node.js version:
 
 ```powershell
 node --version
 ```
 
-## Установка в OpenClaw
+## Installing in OpenClaw
 
-На Ubuntu установите плагин, Chromium и необходимые системные библиотеки:
+On Ubuntu, install the plugin, Chromium, and the required system libraries:
 
 ```bash
 openclaw plugins install npm:@sharleysoft/openclaw-yandex-maps-places-review
@@ -37,9 +39,9 @@ npx --yes @sharleysoft/openclaw-yandex-maps-places-review@latest setup --with-de
 openclaw plugins enable yandex-maps-places-review
 ```
 
-Setup-команду нужно запускать без префикса `sudo` от того же Unix-пользователя, под которым работает OpenClaw Gateway: Playwright хранит Chromium в пользовательском cache. У этого пользователя должны быть права `sudo` — при установке системных Linux-пакетов Playwright сам запросит повышение прав.
+Run the setup command without the `sudo` prefix and as the same Unix user that runs the OpenClaw Gateway, because Playwright stores Chromium in the user's cache. That user must have `sudo` privileges; Playwright will request elevation when it installs the required Linux system packages.
 
-На Windows и macOS системные Linux-пакеты не нужны:
+Windows and macOS do not require the Linux system packages:
 
 ```powershell
 openclaw plugins install npm:@sharleysoft/openclaw-yandex-maps-places-review
@@ -47,7 +49,7 @@ npx --yes @sharleysoft/openclaw-yandex-maps-places-review@latest setup
 openclaw plugins enable yandex-maps-places-review
 ```
 
-Профиль tools `coding` не включает tools, предоставляемые плагинами. Чтобы разрешить только этот tool, добавьте его в активный `openclaw.json`:
+The `coding` tools profile does not include tools provided by plugins. To allow only this tool, add it to the active `openclaw.json`:
 
 ```json5
 {
@@ -58,9 +60,9 @@ openclaw plugins enable yandex-maps-places-review
 }
 ```
 
-Если `tools.alsoAllow` уже содержит значения, дополните существующий массив, не заменяя его. Если на том же уровне настроен `tools.allow`, добавьте `yandex_maps_place_reviews` в него: `allow` и `alsoAllow` нельзя использовать одновременно на одном уровне.
+If `tools.alsoAllow` already contains values, append to the existing array instead of replacing it. If `tools.allow` is configured at the same level, add `yandex_maps_place_reviews` there instead: `allow` and `alsoAllow` cannot be used together at the same level.
 
-При sandbox-режиме `all` или `non-main` дополнительно разрешите ID плагина на уровне sandbox:
+When using sandbox mode `all` or `non-main`, also allow the plugin ID at the sandbox level:
 
 ```json5
 {
@@ -74,7 +76,7 @@ openclaw plugins enable yandex-maps-places-review
 }
 ```
 
-Проверьте конфигурацию, обязательно перезапустите Gateway и затем убедитесь, что tool зарегистрирован в runtime:
+Validate the configuration, restart the Gateway, and then verify that the tool is registered at runtime:
 
 ```bash
 openclaw config validate
@@ -82,7 +84,7 @@ openclaw gateway restart
 openclaw plugins inspect yandex-maps-places-review --runtime --json
 ```
 
-Обновление плагина:
+To update the plugin:
 
 ```bash
 openclaw plugins update yandex-maps-places-review
@@ -91,18 +93,18 @@ openclaw gateway restart
 openclaw plugins inspect yandex-maps-places-review --runtime --json
 ```
 
-После обновления setup-команда повторно проверяет и устанавливает Chromium, требуемый новой версией Playwright. На Ubuntu запускайте её без префикса `sudo` от пользователя Gateway с правами `sudo`. На Windows и macOS используйте её без `--with-deps`.
+After an update, the setup command checks and installs the Chromium version required by the new Playwright version. On Ubuntu, run it without the `sudo` prefix as the Gateway user with `sudo` privileges. On Windows and macOS, run it without `--with-deps`.
 
-## Локальная разработка
+## Local Development
 
-### Установка зависимостей
+### Installing Dependencies
 
 ```powershell
 npm install
 npx cross-env PLAYWRIGHT_BROWSERS_PATH=0 playwright install chromium
 ```
 
-### Сборка и проверки
+### Build and Checks
 
 ```powershell
 npm run build
@@ -113,32 +115,32 @@ npm run plugin:build
 npm run plugin:validate
 ```
 
-Полная локальная проверка:
+Run the complete local verification suite:
 
 ```powershell
 npm run verify
 ```
 
-## Использование tool
+## Tool Usage
 
-Имя tool:
+Tool name:
 
 ```text
 yandex_maps_place_reviews
 ```
 
-Параметры:
+Parameters:
 
-- `url` - ссылка на заведение в Яндекс Картах.
-- `count` - необязательное количество последних отзывов, по умолчанию `100`, минимум `1`, максимум `500`.
+- `url` - a link to a place on Yandex Maps.
+- `count` - optional number of latest reviews to return; defaults to `100`, with a minimum of `1` and a maximum of `500`.
 
-Поддерживаются как канонические ссылки вида `https://yandex.ru/maps/org/...`, так и share/POI-ссылки вида `https://yandex.com/maps/213/moscow/?mode=poi&poi%5Buri%5D=ymapsbm1%3A%2F%2Forg%3Foid%3D...&tab=reviews`.
+Both canonical URLs such as `https://yandex.ru/maps/org/...` and share/POI URLs such as `https://yandex.com/maps/213/moscow/?mode=poi&poi%5Buri%5D=ymapsbm1%3A%2F%2Forg%3Foid%3D...&tab=reviews` are supported.
 
-Config плагина:
+Plugin configuration:
 
-- `logLevel` - необязательный уровень логирования: `silent`, `error`, `warn`, `info`, `debug`.
+- `logLevel` - optional logging level: `silent`, `error`, `warn`, `info`, or `debug`.
 
-Формат результата:
+Result format:
 
 ```json
 {
@@ -149,7 +151,7 @@ Config плагина:
     {
       "url": "https://yandex.ru/maps/org/example/123/reviews/abc",
       "date": "2026-07-06T12:00:00.000Z",
-      "text": "Текст отзыва"
+      "text": "Review text"
     }
   ],
   "stats": {
@@ -163,16 +165,16 @@ Config плагина:
 }
 ```
 
-## Посмотреть output вручную
+## Inspecting Output Manually
 
-Headless-режим:
+Headless mode:
 
 ```powershell
 $env:LOG_LEVEL='silent'
 npm run run:tool -- "https://yandex.ru/maps/org/tri_vokzala_depo/168713437054/" 100
 ```
 
-Видимый браузер:
+Visible browser:
 
 ```powershell
 $env:HEADED='1'
@@ -180,9 +182,9 @@ $env:LOG_LEVEL='silent'
 npm run run:tool -- "https://yandex.ru/maps/org/tri_vokzala_depo/168713437054/" 100
 ```
 
-## Live-тесты
+## Live Tests
 
-Headless live-тест:
+Headless live test:
 
 ```powershell
 $env:YANDEX_MAPS_PLACE_URL="https://yandex.ru/maps/org/tri_vokzala_depo/168713437054/"
@@ -190,7 +192,7 @@ $env:YANDEX_MAPS_REVIEW_COUNT="100"
 npm run test:live
 ```
 
-Live-тест с видимым браузером:
+Live test with a visible browser:
 
 ```powershell
 $env:YANDEX_MAPS_PLACE_URL="https://yandex.ru/maps/org/tri_vokzala_depo/168713437054/"
@@ -198,24 +200,24 @@ $env:YANDEX_MAPS_REVIEW_COUNT="100"
 npm run test:headed
 ```
 
-После успешной проверки команда сохраняет полный JSON-результат в `artifacts/yandex-maps-reviews.headed.json`. Путь можно переопределить:
+After a successful run, the command saves the complete JSON result to `artifacts/yandex-maps-reviews.headed.json`. You can override the path:
 
 ```powershell
 $env:YANDEX_MAPS_OUTPUT_FILE="artifacts/my-place-reviews.json"
 npm run test:headed
 ```
 
-`npm test` запускает стабильные unit/component-тесты без обращения к Яндекс Картам. Live-проверка запускается отдельно через `npm run test:live` и запрашивает минимум 60 отзывов. `YANDEX_MAPS_PLACE_URL` и `YANDEX_MAPS_REVIEW_COUNT` позволяют переопределить страницу и количество; count для live-теста должен быть от 60 до 500. Недоступность сети, CAPTCHA или изменение DOM приводят к падению live-теста.
+`npm test` runs stable unit and component tests without accessing Yandex Maps. The live check runs separately through `npm run test:live` and requests at least 60 reviews. `YANDEX_MAPS_PLACE_URL` and `YANDEX_MAPS_REVIEW_COUNT` let you override the page and review count; the live-test count must be between 60 and 500. Network unavailability, a CAPTCHA, or DOM changes cause the live test to fail.
 
-Live-тест является обязательным release gate: workflow не публикует npm-пакет и не создаёт GitHub Release, пока тест не завершится успешно.
+The live test is a mandatory release gate: the workflow does not publish the npm package or create a GitHub Release until the test passes.
 
-## Выпуск новой версии
+## Releasing a New Version
 
-Release workflow запускается тегом, который должен точно совпадать с версией package и manifest:
+The release workflow is triggered by a tag that must exactly match the package and manifest versions:
 
 ```bash
 npm version patch --no-git-tag-version
-# Обновите version в openclaw.plugin.json тем же значением.
+# Update the version in openclaw.plugin.json to the same value.
 npm run verify
 git add package.json package-lock.json openclaw.plugin.json
 git commit -m "release: v0.1.1"
@@ -223,33 +225,33 @@ git tag v0.1.1
 git push origin master --tags
 ```
 
-Workflow на `ubuntu-latest` устанавливает Chromium, выполняет unit/component- и обязательный live-тест, валидирует manifest, устанавливает собранный `.tgz` через `npm-pack:`, публикует этот же проверенный архив в npm и только после этого создаёт GitHub Release.
+The workflow on `ubuntu-latest` installs Chromium, runs the unit/component tests and the mandatory live test, validates the manifest, installs the built `.tgz` through `npm-pack:`, publishes the same verified archive to npm, and only then creates a GitHub Release.
 
-Для самого первого выпуска, пока npm-пакет ещё не существует, Trusted Publisher настроить нельзя. Создайте временный granular npm token с разрешением publish и bypass 2FA, сохраните его как secret `NPM_TOKEN` в GitHub environment `npm` и создайте тег `v0.1.0`. После успешного workflow:
+For the first release, while the npm package does not yet exist, you cannot configure a Trusted Publisher. Create a temporary granular npm token with publish permission and 2FA bypass, save it as the `NPM_TOKEN` secret in the `npm` GitHub environment, and create the `v0.1.0` tag. After the workflow succeeds:
 
-1. Настройте для npm-пакета Trusted Publisher: GitHub repository `PavelRubis/OpenClawYandexMapsPlacesReview`, workflow `release.yml`, environment `npm`, permission `npm publish`.
-2. Удалите secret `NPM_TOKEN`.
-3. В настройках npm запретите обычную token-based публикацию.
+1. Configure a Trusted Publisher for the npm package: GitHub repository `PavelRubis/OpenClawYandexMapsPlacesReview`, workflow `release.yml`, environment `npm`, permission `npm publish`.
+2. Delete the `NPM_TOKEN` secret.
+3. Disable regular token-based publishing in the npm settings.
 
-Следующие версии публикуются через GitHub OIDC без постоянного npm-токена. Если live-тест упал из-за временной внешней ошибки, допускается rerun workflow. Если потребовалось изменение кода, существующий тег не переписывается — выпускается новая patch-версия.
+Subsequent versions are published through GitHub OIDC without a persistent npm token. If the live test fails because of a temporary external error, you may rerun the workflow. If a code change is required, do not overwrite the existing tag; release a new patch version instead.
 
-## Структура проекта
+## Project Structure
 
-- `src/Tools` - тонкие OpenClaw tool adapters.
-- `src/Application` - DTO, нормализация входа, dependency interfaces и tool call handlers.
-- `src/Infrastructure` - Playwright collector, logging и clock implementations.
-- `src/Composition` - сборка handlers и infrastructure.
-- `src/Schemas` - TypeBox-схемы config и parameters.
-- `src/Tests` - application, infrastructure, plugin и live collector tests.
-- `scripts/run-tool.ts` - ручной запуск handler-а через composition root и печать JSON output.
+- `src/Tools` - thin OpenClaw tool adapters.
+- `src/Application` - DTOs, input normalization, dependency interfaces, and tool call handlers.
+- `src/Infrastructure` - the Playwright collector, logging, and clock implementations.
+- `src/Composition` - composition of handlers and infrastructure.
+- `src/Schemas` - TypeBox schemas for configuration and parameters.
+- `src/Tests` - application, infrastructure, plugin, and live collector tests.
+- `scripts/run-tool.ts` - manual execution of the handler through the composition root, with JSON output printed to the console.
 
-## Ограничения
+## Limitations
 
-- Плагин не решает CAPTCHA автоматически.
-- Если Яндекс показывает challenge/CAPTCHA, collector замедляется, перезагружает страницу и пытается продолжить после последнего найденного отзыва.
-- Если список перестал догружаться, collector возвращает уже найденные отзывы с warning.
-- DOM Яндекс Карт может меняться; обязательный live-тест обнаруживает такие изменения при каждом запуске `npm test`.
+- The plugin does not solve CAPTCHAs automatically.
+- If Yandex displays a challenge or CAPTCHA, the collector slows down, reloads the page, and attempts to continue after the last review it found.
+- If the list stops loading more reviews, the collector returns the reviews it has already found with a warning.
+- The Yandex Maps DOM may change; the mandatory live test detects such changes on every `npm test` run.
 
-## Лицензия
+## License
 
-MIT. См. [LICENSE](./LICENSE).
+MIT. See [LICENSE](./LICENSE).

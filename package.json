@@ -1,6 +1,6 @@
 {
   "name": "@sharleysoft/openclaw-yandex-maps-places-review",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "OpenClaw tool plugin that collects recent Yandex Maps place reviews with Playwright.",
   "type": "module",
   "main": "./dist/index.js",
@@ -12,6 +12,7 @@
     "dist",
     "openclaw.plugin.json",
     "README.md",
+    "README.ru.md",
     "LICENSE"
   ],
   "scripts": {
