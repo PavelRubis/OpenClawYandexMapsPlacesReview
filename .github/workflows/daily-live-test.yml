@@ -1,0 +1,64 @@
+name: Daily live test
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+      timezone: "Europe/Moscow"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-yandex-maps-live-test
+  cancel-in-progress: true
+
+jobs:
+  live-test:
+    name: Check live Yandex Maps behavior
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: "0"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Use the project npm version
+        run: npm install --global npm@11.16.0
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium and Linux dependencies
+        run: npx playwright install --with-deps chromium
+
+      - name: Run live test
+        shell: bash
+        env:
+          DEBUG: pw:api
+          YANDEX_MAPS_REVIEW_COUNT: "60"
+          YANDEX_MAPS_OUTPUT_FILE: artifacts/yandex-maps-reviews.live.json
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          npm run test:live 2>&1 | tee artifacts/live-test.log
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-live-test-diagnostics
+          path: |
+            artifacts/*.json
+            artifacts/*.log
+            test-results/**
+          if-no-files-found: warn
+          retention-days: 7
